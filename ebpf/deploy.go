@@ -8,6 +8,7 @@ import (
 
 	"github.com/ddosify/alaz/ebpf/l7_req"
 	"github.com/ddosify/alaz/ebpf/tcp_state"
+	"github.com/ddosify/alaz/ebpf/throughput"
 	"github.com/ddosify/alaz/log"
 )
 
@@ -50,12 +51,22 @@ func (e *EbpfCollector) Deploy() {
 		defer wg.Done()
 		l7_req.DeployAndWait(e.ctx, e.ebpfEvents)
 	}()
+	//go func() {
+	//	defer wg.Done()
+	//	throughput.DeployAndWait(e.ctx, e.ebpfEvents)
+	//}()
 	wg.Wait()
 
 	log.Logger.Info().Msg("ebpf programs exited")
 	close(e.done)
 
 	// go listenDebugMsgs()
+}
+
+func (e *EbpfCollector) DeployThroughput(eventChan <-chan interface{}) {
+	throughput.DeployAndWait(e.ctx, e.ebpfEvents, eventChan)
+	log.Logger.Info().Msg("throughput ebpf program exited")
+	close(e.done)
 }
 
 func listenDebugMsgs() {

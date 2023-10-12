@@ -51,6 +51,7 @@ func main() {
 	if ebpfEnabled {
 		ec = ebpf.NewEbpfCollector(ctx)
 		go ec.Deploy()
+		go ec.DeployThroughput(kubeEvents)
 
 		a := aggregator.NewAggregator(kubeEvents, nil, ec.EbpfEvents(), exporter)
 		a.Run()

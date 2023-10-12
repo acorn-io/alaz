@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/ddosify/alaz/log"
+	"github.com/vishvananda/netlink"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
@@ -90,6 +91,7 @@ func (e TcpConnectEvent) Type() string {
 
 // returns when program is detached
 func DeployAndWait(parentCtx context.Context, ch chan interface{}) {
+	netlink.LinkList()
 	ctx, _ := context.WithCancel(parentCtx)
 	// Allow the current process to lock memory for eBPF resources.
 	if err := rlimit.RemoveMemlock(); err != nil {

@@ -2,13 +2,11 @@ package datastore
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 	"sync"
 
 	"github.com/ddosify/alaz/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -21,13 +19,16 @@ type PrometheusExporter struct {
 	ctx context.Context
 	reg *prometheus.Registry
 
-	latencyHistogram *prometheus.HistogramVec
-	statusCounter    *prometheus.CounterVec
+	latencyHistogram  *prometheus.HistogramVec
+	statusCounter     *prometheus.CounterVec
+	throughputCounter *prometheus.CounterVec
 
-	podCache *eventCache
-	svcCache *eventCache
+	podCache   *eventCache
+	podIPCache *eventCache
+	svcCache   *eventCache
 
 	reqChanBuffer chan Request
+	pktChanBuffer chan Packet
 }
 
 type eventCache struct {
@@ -66,8 +67,10 @@ func NewPrometheusExporter(ctx context.Context) *PrometheusExporter {
 		ctx:           ctx,
 		reg:           prometheus.NewRegistry(),
 		podCache:      newEventCache(),
+		podIPCache:    newEventCache(),
 		svcCache:      newEventCache(),
 		reqChanBuffer: make(chan Request, 10000),
+		pktChanBuffer: make(chan Packet, 10000),
 	}
 
 	// Labels to consider using in the future:
@@ -93,18 +96,23 @@ func NewPrometheusExporter(ctx context.Context) *PrometheusExporter {
 	)
 	exporter.reg.MustRegister(exporter.statusCounter)
 
-	go exporter.handleReqs()
+	exporter.throughputCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "alaz",
+			Name:      "throughput",
+		},
+		[]string{"fromPod", "fromAcornApp", "fromAcornContainer", "fromAcornAppNamespace", "fromHostname", "toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "toPort", "toHostname"},
+	)
+	exporter.reg.MustRegister(exporter.throughputCounter)
 
-	go func() {
-		http.Handle("/metricz", promhttp.HandlerFor(exporter.reg, promhttp.HandlerOpts{}))
-		go func() {
-			if err := http.ListenAndServe(":8080", nil); err != nil {
-				log.Logger.Error().Err(err).Msg("error while serving metrics")
-			}
-		}()
-		<-exporter.ctx.Done()
-		log.Logger.Info().Msg("Prometheus exporter stopped")
-	}()
+	go exporter.handleReqs()
+	go exporter.handlePackets()
+
+	server, err := NewServer(ctx, exporter.reg, exporter.podIPCache)
+	if err != nil {
+		log.Logger.Fatal().Err(err).Msg("error while creating prometheus server")
+	}
+	go server.Serve()
 
 	return exporter
 }
@@ -124,12 +132,12 @@ func (p *PrometheusExporter) handleReq(req Request) {
 	if req.ToType == "pod" {
 		toPod, found := p.podCache.get(req.ToUID)
 		if found {
-			p.updateMetrics(toPod.(PodEvent), req)
+			p.updateMetricsForReq(toPod.(PodEvent), req)
 		}
 	}
 }
 
-func (p *PrometheusExporter) updateMetrics(toPod PodEvent, req Request) {
+func (p *PrometheusExporter) updateMetricsForReq(toPod PodEvent, req Request) {
 	p.latencyHistogram.With(prometheus.Labels{
 		"toPod":               toPod.Name,
 		"toAcornApp":          toPod.Labels[appLabel],
@@ -146,17 +154,114 @@ func (p *PrometheusExporter) updateMetrics(toPod PodEvent, req Request) {
 	}).Inc()
 }
 
+func (p *PrometheusExporter) handlePackets() {
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case pkt := <-p.pktChanBuffer:
+			p.handlePacket(pkt)
+		}
+	}
+}
+
+func (p *PrometheusExporter) handlePacket(pkt Packet) {
+	labels := prometheus.Labels{
+		"toPort": strconv.Itoa(int(pkt.ToPort)),
+	}
+
+	if pkt.FromType == PodSource {
+		fromPod, found := p.podCache.get(pkt.FromUID)
+		if found {
+			labels["fromPod"] = fromPod.(PodEvent).Name
+			labels["fromAcornApp"] = fromPod.(PodEvent).Labels[appLabel]
+			labels["fromAcornAppNamespace"] = fromPod.(PodEvent).Labels[appNamespaceLabel]
+			labels["fromAcornContainer"] = fromPod.(PodEvent).Labels[containerLabel]
+			labels["fromHostname"] = ""
+
+			if pkt.ToType == PodDest {
+				toPod, found := p.podCache.get(pkt.ToUID)
+				if found {
+					labels["toPod"] = toPod.(PodEvent).Name
+					labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
+					labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
+					labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
+					labels["toHostname"] = ""
+				}
+			} else if pkt.ToType == OutsideDest {
+				labels["toHostname"] = pkt.ToUID
+				labels["toPod"] = ""
+				labels["toAcornApp"] = ""
+				labels["toAcornAppNamespace"] = ""
+				labels["toAcornContainer"] = ""
+			} else if pkt.ToType == ServiceDest {
+				log.Logger.Warn().Msgf("Pod %s in namespace %s sent traffic to service with uid %s)", fromPod.(PodEvent).Name, fromPod.(PodEvent).Namespace, pkt.ToUID)
+				labels["toPod"] = pkt.ToIP
+				labels["toAcornApp"] = ""
+				labels["toAcornAppNamespace"] = ""
+				labels["toAcornContainer"] = ""
+				labels["toHostname"] = ""
+			} else {
+				labels["toPod"] = pkt.ToIP
+				labels["toAcornApp"] = ""
+				labels["toAcornAppNamespace"] = ""
+				labels["toAcornContainer"] = ""
+				labels["toHostname"] = ""
+			}
+		}
+	} else if pkt.FromType == OutsideSource {
+		labels["fromHostname"] = pkt.FromUID
+		labels["fromPod"] = ""
+		labels["fromAcornApp"] = ""
+		labels["fromAcornAppNamespace"] = ""
+		labels["fromAcornContainer"] = ""
+
+		if pkt.ToType == PodDest {
+			toPod, found := p.podCache.get(pkt.ToUID)
+			if found {
+				labels["toPod"] = toPod.(PodEvent).Name
+				labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
+				labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
+				labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
+				labels["toHostname"] = ""
+			}
+		} else if pkt.ToType == ServiceDest {
+			log.Logger.Warn().Msgf("Host %s (outside) sent traffic to service with uid %s)", pkt.FromUID, pkt.ToUID)
+			labels["toPod"] = pkt.ToIP
+			labels["toAcornApp"] = ""
+			labels["toAcornAppNamespace"] = ""
+			labels["toAcornContainer"] = ""
+			labels["toHostname"] = ""
+		} else {
+			labels["toPod"] = pkt.ToIP
+			labels["toAcornApp"] = ""
+			labels["toAcornAppNamespace"] = ""
+			labels["toAcornContainer"] = ""
+			labels["toHostname"] = ""
+		}
+	}
+
+	p.throughputCounter.With(labels).Add(float64(pkt.Size))
+}
+
 func (p *PrometheusExporter) PersistRequest(request Request) error {
 	p.reqChanBuffer <- request
+	return nil
+}
+
+func (p *PrometheusExporter) PersistPacket(packet Packet) error {
+	p.pktChanBuffer <- packet
 	return nil
 }
 
 func (p *PrometheusExporter) PersistPod(pod Pod, eventType string) error {
 	if eventType == "DELETE" {
 		p.podCache.delete(pod.UID)
+		p.podIPCache.delete(pod.IP)
 	} else {
 		podEvent := convertPodToPodEvent(pod, eventType)
 		p.podCache.set(pod.UID, podEvent)
+		p.podIPCache.set(pod.IP, podEvent)
 	}
 	return nil
 }
