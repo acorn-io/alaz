@@ -20,16 +20,23 @@ type EventPayload struct {
 	Events   []interface{} `json:"events"`
 }
 
-type PodEvent struct {
-	UID       string `json:"uid"`
-	EventType string `json:"event_type"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	IP        string `json:"ip"`
-	OwnerType string `json:"owner_type"`
-	OwnerName string `json:"owner_name"`
-	OwnerID   string `json:"owner_id"`
+type Event interface {
+	GetUID() string
 }
+
+type PodEvent struct {
+	UID       string            `json:"uid"`
+	EventType string            `json:"event_type"`
+	Name      string            `json:"name"`
+	Namespace string            `json:"namespace"`
+	IP        string            `json:"ip"`
+	OwnerType string            `json:"owner_type"`
+	OwnerName string            `json:"owner_name"`
+	OwnerID   string            `json:"owner_id"`
+	Labels    map[string]string `json:"labels"`
+}
+
+func (p PodEvent) GetUID() string { return p.UID }
 
 type SvcEvent struct {
 	UID        string   `json:"uid"`
@@ -43,7 +50,10 @@ type SvcEvent struct {
 		Dest     int32  `json:"dest"`
 		Protocol string `json:"protocol"`
 	} `json:"ports"`
+	Selector map[string]string `json:"selector"`
 }
+
+func (s SvcEvent) GetUID() string { return s.UID }
 
 type RsEvent struct {
 	UID       string `json:"uid"`
@@ -56,12 +66,16 @@ type RsEvent struct {
 	OwnerID   string `json:"owner_id"`
 }
 
+func (r RsEvent) GetUID() string { return r.UID }
+
 type DsEvent struct {
 	UID       string `json:"uid"`
 	EventType string `json:"event_type"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
 }
+
+func (d DsEvent) GetUID() string { return d.UID }
 
 type DepEvent struct {
 	UID       string `json:"uid"`
@@ -71,6 +85,8 @@ type DepEvent struct {
 	Replicas  int32  `json:"replicas"`
 }
 
+func (d DepEvent) GetUID() string { return d.UID }
+
 type EpEvent struct {
 	UID       string    `json:"uid"`
 	EventType string    `json:"event_type"`
@@ -78,6 +94,8 @@ type EpEvent struct {
 	Namespace string    `json:"namespace"`
 	Addresses []Address `json:"addresses"`
 }
+
+func (e EpEvent) GetUID() string { return e.UID }
 
 type ContainerEvent struct {
 	UID       string `json:"uid"`
@@ -91,6 +109,8 @@ type ContainerEvent struct {
 		Protocol string `json:"protocol"`
 	} `json:"ports"`
 }
+
+func (c ContainerEvent) GetUID() string { return c.UID }
 
 // 0) StartTime
 // 1) Latency
@@ -124,6 +144,7 @@ func convertPodToPodEvent(pod Pod, eventType string) PodEvent {
 		OwnerType: pod.OwnerType,
 		OwnerName: pod.OwnerName,
 		OwnerID:   pod.OwnerID,
+		Labels:    pod.Labels,
 	}
 }
 
@@ -136,58 +157,6 @@ func convertSvcToSvcEvent(service Service, eventType string) SvcEvent {
 		Type:       service.Type,
 		ClusterIPs: service.ClusterIPs,
 		Ports:      service.Ports,
-	}
-}
-
-func convertRsToRsEvent(rs ReplicaSet, eventType string) RsEvent {
-	return RsEvent{
-		UID:       rs.UID,
-		EventType: eventType,
-		Name:      rs.Name,
-		Namespace: rs.Namespace,
-		Replicas:  rs.Replicas,
-		OwnerType: rs.OwnerType,
-		OwnerName: rs.OwnerName,
-		OwnerID:   rs.OwnerID,
-	}
-}
-
-func convertDsToDsEvent(ds DaemonSet, eventType string) DsEvent {
-	return DsEvent{
-		UID:       ds.UID,
-		EventType: eventType,
-		Name:      ds.Name,
-		Namespace: ds.Namespace,
-	}
-}
-
-func convertDepToDepEvent(d Deployment, eventType string) DepEvent {
-	return DepEvent{
-		UID:       d.UID,
-		EventType: eventType,
-		Name:      d.Name,
-		Namespace: d.Namespace,
-		Replicas:  d.Replicas,
-	}
-}
-
-func convertEpToEpEvent(ep Endpoints, eventType string) EpEvent {
-	return EpEvent{
-		UID:       ep.UID,
-		EventType: eventType,
-		Name:      ep.Name,
-		Namespace: ep.Namespace,
-		Addresses: ep.Addresses,
-	}
-}
-
-func convertContainerToContainerEvent(c Container, eventType string) ContainerEvent {
-	return ContainerEvent{
-		EventType: eventType,
-		Name:      c.Name,
-		Namespace: c.Namespace,
-		Pod:       c.PodUID,
-		Image:     c.Image,
-		Ports:     c.Ports,
+		Selector:   service.Selector,
 	}
 }

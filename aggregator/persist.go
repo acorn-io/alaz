@@ -45,6 +45,8 @@ func (a *Aggregator) processPod(d k8s.K8sResourceMessage) {
 		OwnerType: ownerType,
 		OwnerID:   ownerID,
 		OwnerName: ownerName,
+
+		Labels: pod.GetLabels(),
 	}
 
 	switch d.EventType {
@@ -101,6 +103,7 @@ func (a *Aggregator) processSvc(d k8s.K8sResourceMessage) {
 		Type:       string(service.Spec.Type),
 		ClusterIPs: service.Spec.ClusterIPs,
 		Ports:      ports,
+		Selector:   service.Spec.Selector,
 	}
 
 	switch d.EventType {

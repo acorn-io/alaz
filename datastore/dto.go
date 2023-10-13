@@ -9,6 +9,7 @@ type Pod struct {
 	OwnerType string // ReplicaSet or nil
 	OwnerID   string // ReplicaSet UID
 	OwnerName string // ReplicaSet Name
+	Labels    map[string]string
 }
 
 type Service struct {
@@ -23,6 +24,7 @@ type Service struct {
 		Dest     int32  `json:"dest"`
 		Protocol string `json:"protocol"`
 	}
+	Selector map[string]string
 }
 
 type ReplicaSet struct {

@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/ddosify/alaz/aggregator"
-	"github.com/ddosify/alaz/config"
 	"github.com/ddosify/alaz/datastore"
 	"github.com/ddosify/alaz/ebpf"
 	"github.com/ddosify/alaz/k8s"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/ddosify/alaz/log"
 
-	"net/http"
 	_ "net/http/pprof"
 )
 
@@ -44,16 +42,9 @@ func main() {
 	}
 
 	ebpfEnabled, _ := strconv.ParseBool(os.Getenv("EBPF_ENABLED"))
-	metricsEnabled, _ := strconv.ParseBool(os.Getenv("METRICS_ENABLED"))
 
-	// datastore backend
-	dsBackend := datastore.NewBackendDS(ctx, config.BackendConfig{
-		Host:                  os.Getenv("BACKEND_HOST"),
-		Port:                  os.Getenv("BACKEND_PORT"),
-		MetricsExport:         metricsEnabled,
-		MetricsExportInterval: 10,
-	})
-	go dsBackend.SendHealthCheck(ebpfEnabled, metricsEnabled)
+	// start Prometheus exporter
+	exporter := datastore.NewPrometheusExporter(ctx)
 
 	// deploy ebpf programs
 	var ec *ebpf.EbpfCollector
@@ -61,11 +52,9 @@ func main() {
 		ec = ebpf.NewEbpfCollector(ctx)
 		go ec.Deploy()
 
-		a := aggregator.NewAggregator(kubeEvents, nil, ec.EbpfEvents(), dsBackend)
+		a := aggregator.NewAggregator(kubeEvents, nil, ec.EbpfEvents(), exporter)
 		a.Run()
 	}
-
-	go http.ListenAndServe(":8181", nil)
 
 	<-k8sCollector.Done()
 	log.Logger.Info().Msg("k8sCollector done")
