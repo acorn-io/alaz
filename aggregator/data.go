@@ -63,7 +63,7 @@ type ClusterInfo struct {
 	PodIPToPodUid         map[string]types.UID `json:"podIPToPodUid"`
 	ServiceIPToServiceUid map[string]types.UID `json:"serviceIPToServiceUid"`
 
-	// Size -> SocketMap
+	// Pid -> SocketMap
 	// pid -> fd -> {saddr, sport, daddr, dport}
 	PidToSocketMap map[uint32]*SocketMap `json:"pidToSocketMap"`
 }

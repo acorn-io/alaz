@@ -40,7 +40,6 @@ func (s *Server) Serve() {
 			log.Logger.Error().Err(err).Msg("error while serving metrics")
 		}
 	}()
-	//go s.purgeBans()
 	<-s.ctx.Done()
 	log.Logger.Info().Msg("Prometheus HTTP server stopped")
 }
@@ -69,55 +68,3 @@ func (s *Server) authorizePrometheus(handler http.Handler) http.Handler {
 		w.Write([]byte("401 Unauthorized\n"))
 	})
 }
-
-//func (s *Server) basicAuth(handler http.Handler) http.Handler {
-//	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//		source := r.RemoteAddr
-//
-//		s.m.RLock()
-//		_, banned := s.bans[source]
-//		s.m.RUnlock()
-//		if banned {
-//			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
-//			w.Write([]byte("429 Too Many Requests\n"))
-//			return
-//		}
-//
-//		user, pass, ok := r.BasicAuth()
-//		if !ok || user != s.username || pass != s.password {
-//			s.m.Lock()
-//			s.failedAttempts[source]++
-//			if s.failedAttempts[source] >= 3 {
-//				s.bans[source] = time.Now()
-//				log.Logger.Info().Msgf("banning remote addr %s for 1 hour", source)
-//			}
-//			s.m.Unlock()
-//
-//			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
-//			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-//			w.Write([]byte("401 Unauthorized\n"))
-//			return
-//		}
-//
-//		handler.ServeHTTP(w, r)
-//	})
-//}
-
-//func (s *Server) purgeBans() {
-//	ticker := time.NewTicker(5 * time.Minute)
-//	select {
-//	case <-s.ctx.Done():
-//		ticker.Stop()
-//		return
-//	case <-ticker.C:
-//		for source, banTime := range s.bans {
-//			if time.Now().After(banTime.Add(time.Hour)) {
-//				s.m.Lock()
-//				delete(s.bans, source)
-//				s.failedAttempts[source] = 0
-//				s.m.Unlock()
-//			}
-//		}
-//	}
-//
-//}
