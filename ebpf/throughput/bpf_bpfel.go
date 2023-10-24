@@ -12,15 +12,6 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type bpfThroughputEvent struct {
-	Timestamp uint64
-	Size      uint32
-	Sport     uint16
-	Dport     uint16
-	Saddr     [16]uint8
-	Daddr     [16]uint8
-}
-
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_BpfBytes)
@@ -69,8 +60,7 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	ThroughputEventHeap *ebpf.MapSpec `ebpf:"throughput_event_heap"`
-	ThroughputEvents    *ebpf.MapSpec `ebpf:"throughput_events"`
+	ThroughputEvents *ebpf.MapSpec `ebpf:"throughput_events"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -92,13 +82,11 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	ThroughputEventHeap *ebpf.Map `ebpf:"throughput_event_heap"`
-	ThroughputEvents    *ebpf.Map `ebpf:"throughput_events"`
+	ThroughputEvents *ebpf.Map `ebpf:"throughput_events"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
-		m.ThroughputEventHeap,
 		m.ThroughputEvents,
 	)
 }

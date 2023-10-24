@@ -51,10 +51,6 @@ func (e *EbpfCollector) Deploy() {
 		defer wg.Done()
 		l7_req.DeployAndWait(e.ctx, e.ebpfEvents)
 	}()
-	//go func() {
-	//	defer wg.Done()
-	//	throughput.DeployAndWait(e.ctx, e.ebpfEvents)
-	//}()
 	wg.Wait()
 
 	log.Logger.Info().Msg("ebpf programs exited")

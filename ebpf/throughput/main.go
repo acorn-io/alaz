@@ -77,10 +77,10 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 
 	throughputEventReader, err := ringbuf.NewReader(objs.ThroughputEvents)
 	if err != nil {
-		log.Logger.Fatal().Err(err).Msg("failed to create perf event reader")
+		log.Logger.Fatal().Err(err).Msg("failed to create ringbuf reader")
 	}
 	defer func() {
-		log.Logger.Info().Msg("closing throughputEventReader perf event reader")
+		log.Logger.Info().Msg("closing throughputEventReader ringbuf reader")
 		throughputEventReader.Close()
 	}()
 
@@ -90,7 +90,7 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 			read := func() {
 				record, err := throughputEventReader.Read()
 				if err != nil {
-					log.Logger.Warn().Err(err).Msg("error reading from perf array")
+					log.Logger.Warn().Err(err).Msg("error reading from ringbuf")
 				}
 
 				if record.RawSample == nil || len(record.RawSample) == 0 {

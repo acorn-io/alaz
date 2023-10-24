@@ -31,13 +31,6 @@ struct {
     __uint(max_entries, 1 << 16);
 } throughput_events SEC(".maps");
 
-struct {
-	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__type(key, __u32);
-	__type(value, struct throughput_event);
-	__uint(max_entries, 1);
-} throughput_event_heap SEC(".maps");
-
 SEC("classifier")
 int packet_classifier(struct __sk_buff *skb) {
 	void *data = (void*)(long)skb->data;
