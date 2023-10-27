@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/ddosify/alaz/datastore"
 	"github.com/ddosify/alaz/ebpf"
 	"github.com/ddosify/alaz/k8s"
+	"k8s.io/klog/v2"
 
 	"context"
 
@@ -19,6 +21,8 @@ import (
 )
 
 func main() {
+	klog.SetOutput(io.Discard) // disable klog traces
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := make(chan os.Signal, 1)
