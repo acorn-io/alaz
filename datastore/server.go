@@ -58,7 +58,7 @@ func (s *Server) authorizePrometheus(handler http.Handler) http.Handler {
 		}
 
 		pod, ok := s.podIPCache.get(sourceIP)
-		if ok && pod.(PodEvent).Namespace == os.Getenv("PROMETHEUS_NAMESPACE") {
+		if ok && pod.(PodEvent).Namespace == s.prometheusNamespace {
 			handler.ServeHTTP(w, r)
 			return
 		}

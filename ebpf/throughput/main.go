@@ -58,7 +58,6 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 	// Load pre-compiled programs and maps into the kernel.
 	objs := bpfObjects{}
 	if err := loadBpfObjects(&objs, nil); err != nil {
-		fmt.Println(err.Error())
 		log.Logger.Fatal().Err(err).Msg("loading objects")
 	}
 	defer objs.Close()
@@ -84,35 +83,34 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 		throughputEventReader.Close()
 	}()
 
-	readDone := make(chan struct{})
 	go func() {
-		for {
-			read := func() {
-				record, err := throughputEventReader.Read()
-				if err != nil {
-					log.Logger.Warn().Err(err).Msg("error reading from ringbuf")
-				}
-
-				if record.RawSample == nil || len(record.RawSample) == 0 {
-					return
-				}
-
-				bpfEvent := (*ThroughputEventBpf)(unsafe.Pointer(&record.RawSample[0]))
-
-				go func() {
-					ch <- ThroughputEvent{
-						Timestamp: bpfEvent.Timestamp,
-						Size:      bpfEvent.Size,
-						SPort:     bpfEvent.SPort,
-						DPort:     bpfEvent.DPort,
-						SAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.SAddr[0], bpfEvent.SAddr[1], bpfEvent.SAddr[2], bpfEvent.SAddr[3]),
-						DAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.DAddr[0], bpfEvent.DAddr[1], bpfEvent.DAddr[2], bpfEvent.DAddr[3]),
-					}
-				}()
+		read := func() {
+			record, err := throughputEventReader.Read()
+			if err != nil {
+				log.Logger.Warn().Err(err).Msg("error reading from ringbuf")
 			}
 
+			if record.RawSample == nil || len(record.RawSample) == 0 {
+				return
+			}
+
+			bpfEvent := (*ThroughputEventBpf)(unsafe.Pointer(&record.RawSample[0]))
+
+			go func() {
+				ch <- ThroughputEvent{
+					Timestamp: bpfEvent.Timestamp,
+					Size:      bpfEvent.Size,
+					SPort:     bpfEvent.SPort,
+					DPort:     bpfEvent.DPort,
+					SAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.SAddr[0], bpfEvent.SAddr[1], bpfEvent.SAddr[2], bpfEvent.SAddr[3]),
+					DAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.DAddr[0], bpfEvent.DAddr[1], bpfEvent.DAddr[2], bpfEvent.DAddr[3]),
+				}
+			}()
+		}
+
+		for {
 			select {
-			case <-readDone:
+			case <-ctx.Done():
 				return
 			default:
 				read()
@@ -121,7 +119,6 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 	}()
 
 	<-ctx.Done()
-	readDone <- struct{}{}
 }
 
 func watchNetworkInterfaces(ctx context.Context, objs bpfObjects, eventChan <-chan interface{}) {

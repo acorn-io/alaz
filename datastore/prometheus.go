@@ -15,6 +15,12 @@ const (
 	containerLabel    = "acorn.io/container-name"
 )
 
+var (
+	latencyHistLabels       = []string{"toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace"}
+	statusCounterLabels     = []string{"toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "status"}
+	throughputCounterLabels = []string{"fromPod", "fromAcornApp", "fromAcornContainer", "fromAcornAppNamespace", "fromHostname", "toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "toPort", "toHostname"}
+)
+
 type PrometheusExporter struct {
 	ctx context.Context
 	reg *prometheus.Registry
@@ -83,7 +89,7 @@ func NewPrometheusExporter(ctx context.Context) *PrometheusExporter {
 			Name:      "http_latency",
 			Buckets:   []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000},
 		},
-		[]string{"toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace"},
+		latencyHistLabels,
 	)
 	exporter.reg.MustRegister(exporter.latencyHistogram)
 
@@ -92,7 +98,7 @@ func NewPrometheusExporter(ctx context.Context) *PrometheusExporter {
 			Namespace: "alaz",
 			Name:      "http_status",
 		},
-		[]string{"toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "status"},
+		statusCounterLabels,
 	)
 	exporter.reg.MustRegister(exporter.statusCounter)
 
@@ -101,7 +107,7 @@ func NewPrometheusExporter(ctx context.Context) *PrometheusExporter {
 			Namespace: "alaz",
 			Name:      "throughput",
 		},
-		[]string{"fromPod", "fromAcornApp", "fromAcornContainer", "fromAcornAppNamespace", "fromHostname", "toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "toPort", "toHostname"},
+		throughputCounterLabels,
 	)
 	exporter.reg.MustRegister(exporter.throughputCounter)
 
@@ -177,7 +183,6 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 			labels["fromAcornApp"] = fromPod.(PodEvent).Labels[appLabel]
 			labels["fromAcornAppNamespace"] = fromPod.(PodEvent).Labels[appNamespaceLabel]
 			labels["fromAcornContainer"] = fromPod.(PodEvent).Labels[containerLabel]
-			labels["fromHostname"] = ""
 
 			if pkt.ToType == PodDest {
 				toPod, found := p.podCache.get(pkt.ToUID)
@@ -186,35 +191,18 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 					labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
 					labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
 					labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
-					labels["toHostname"] = ""
 				}
 			} else if pkt.ToType == OutsideDest {
 				labels["toHostname"] = pkt.ToUID
-				labels["toPod"] = ""
-				labels["toAcornApp"] = ""
-				labels["toAcornAppNamespace"] = ""
-				labels["toAcornContainer"] = ""
 			} else if pkt.ToType == ServiceDest {
 				log.Logger.Warn().Msgf("Pod %s in namespace %s sent traffic to service with uid %s)", fromPod.(PodEvent).Name, fromPod.(PodEvent).Namespace, pkt.ToUID)
 				labels["toPod"] = pkt.ToIP
-				labels["toAcornApp"] = ""
-				labels["toAcornAppNamespace"] = ""
-				labels["toAcornContainer"] = ""
-				labels["toHostname"] = ""
 			} else {
 				labels["toPod"] = pkt.ToIP
-				labels["toAcornApp"] = ""
-				labels["toAcornAppNamespace"] = ""
-				labels["toAcornContainer"] = ""
-				labels["toHostname"] = ""
 			}
 		}
 	} else if pkt.FromType == OutsideSource {
 		labels["fromHostname"] = pkt.FromUID
-		labels["fromPod"] = ""
-		labels["fromAcornApp"] = ""
-		labels["fromAcornAppNamespace"] = ""
-		labels["fromAcornContainer"] = ""
 
 		if pkt.ToType == PodDest {
 			toPod, found := p.podCache.get(pkt.ToUID)
@@ -223,25 +211,25 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 				labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
 				labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
 				labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
-				labels["toHostname"] = ""
 			}
 		} else if pkt.ToType == ServiceDest {
 			log.Logger.Warn().Msgf("Host %s (outside) sent traffic to service with uid %s)", pkt.FromUID, pkt.ToUID)
 			labels["toPod"] = pkt.ToIP
-			labels["toAcornApp"] = ""
-			labels["toAcornAppNamespace"] = ""
-			labels["toAcornContainer"] = ""
-			labels["toHostname"] = ""
 		} else {
 			labels["toPod"] = pkt.ToIP
-			labels["toAcornApp"] = ""
-			labels["toAcornAppNamespace"] = ""
-			labels["toAcornContainer"] = ""
-			labels["toHostname"] = ""
 		}
 	}
 
-	p.throughputCounter.With(labels).Add(float64(pkt.Size))
+	p.throughputCounter.With(setEmptyPrometheusLabels(labels, throughputCounterLabels)).Add(float64(pkt.Size))
+}
+
+func setEmptyPrometheusLabels(labels prometheus.Labels, labelList []string) prometheus.Labels {
+	for _, label := range labelList {
+		if _, exists := labels[label]; !exists {
+			labels[label] = ""
+		}
+	}
+	return labels
 }
 
 func (p *PrometheusExporter) PersistRequest(request Request) error {
