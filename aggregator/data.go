@@ -579,12 +579,10 @@ func (a *Aggregator) processThroughputEvent(e throughput.ThroughputEvent) {
 		pkt.Direction = datastore.Ingress
 	}
 
-	go func() {
-		err := a.ds.PersistPacket(pkt)
-		if err != nil {
-			log.Logger.Error().Err(err).Msg("error persisting packet info")
-		}
-	}()
+	err := a.ds.PersistPacket(pkt)
+	if err != nil {
+		log.Logger.Error().Err(err).Msg("error persisting packet info")
+	}
 }
 
 // reverse dns lookup
