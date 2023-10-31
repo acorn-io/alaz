@@ -46,16 +46,21 @@ func main() {
 	// start Prometheus exporter
 	exporter := datastore.NewPrometheusExporter(ctx)
 
+	aggregatorKubeEvents := make(chan interface{})
+	throughputKubeEvents := make(chan interface{})
+
 	// deploy ebpf programs
 	var ec *ebpf.EbpfCollector
 	if ebpfEnabled {
 		ec = ebpf.NewEbpfCollector(ctx)
 		go ec.Deploy()
-		go ec.DeployThroughput(kubeEvents)
+		go ec.DeployThroughput(throughputKubeEvents)
 
-		a := aggregator.NewAggregator(kubeEvents, nil, ec.EbpfEvents(), exporter)
+		a := aggregator.NewAggregator(aggregatorKubeEvents, nil, ec.EbpfEvents(), exporter)
 		a.Run()
 	}
+
+	go fanOut(ctx, kubeEvents, aggregatorKubeEvents, throughputKubeEvents)
 
 	<-k8sCollector.Done()
 	log.Logger.Info().Msg("k8sCollector done")
@@ -64,4 +69,27 @@ func main() {
 	log.Logger.Info().Msg("ebpfCollector done")
 
 	log.Logger.Info().Msg("alaz exiting...")
+}
+
+func fanOut(ctx context.Context, in <-chan any, out ...chan any) {
+	for {
+		select {
+		case <-ctx.Done():
+			for _, o := range out {
+				close(o)
+			}
+			return
+		case e, ok := <-in:
+			if !ok {
+				for _, o := range out {
+					close(o)
+				}
+				return
+			}
+
+			for _, o := range out {
+				o <- e
+			}
+		}
+	}
 }

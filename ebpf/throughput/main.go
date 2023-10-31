@@ -65,7 +65,7 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
 
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Set up network interfaces for the first time, then do it again on pod events
 	if err := setFiltersOnCiliumInterfaces(objs); err != nil {
@@ -126,12 +126,14 @@ func watchNetworkInterfaces(ctx context.Context, objs bpfObjects, eventChan <-ch
 		select {
 		case <-ctx.Done():
 			return
-		case event := <-eventChan:
-			data := event.(k8s.K8sResourceMessage)
-			if data.ResourceType == k8s.POD {
-				if pod, ok := data.Object.(*corev1.Pod); ok && pod.Spec.NodeName == NODE_NAME {
-					if err := setFiltersOnCiliumInterfaces(objs); err != nil {
-						log.Logger.Warn().Err(err)
+		case event, ok := <-eventChan:
+			if ok {
+				data := event.(k8s.K8sResourceMessage)
+				if data.ResourceType == k8s.POD {
+					if pod, ok := data.Object.(*corev1.Pod); ok && pod.Spec.NodeName == NODE_NAME {
+						if err := setFiltersOnCiliumInterfaces(objs); err != nil {
+							log.Logger.Warn().Err(err)
+						}
 					}
 				}
 			}

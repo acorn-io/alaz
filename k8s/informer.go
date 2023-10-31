@@ -89,10 +89,16 @@ func (k *K8sCollector) Init(events chan interface{}) error {
 	defer runtime.HandleCrash()
 
 	// Add event handlers
-	k.watchers[POD].AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    getOnAddPodFunc(k.Events),
-		UpdateFunc: getOnUpdatePodFunc(k.Events),
-		DeleteFunc: getOnDeletePodFunc(k.Events),
+	k.watchers[POD].AddEventHandler(cache.FilteringResourceEventHandler{
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    getOnAddPodFunc(k.Events),
+			UpdateFunc: getOnUpdatePodFunc(k.Events),
+			DeleteFunc: getOnDeletePodFunc(k.Events),
+		},
+		FilterFunc: func(obj interface{}) bool {
+			pod := obj.(*corev1.Pod)
+			return pod.Status.PodIP != ""
+		},
 	})
 
 	k.watchers[SERVICE].AddEventHandler(cache.ResourceEventHandlerFuncs{
