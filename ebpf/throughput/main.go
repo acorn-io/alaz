@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 	"unsafe"
 
 	"github.com/cilium/ebpf/ringbuf"
@@ -61,11 +60,6 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 		log.Logger.Fatal().Err(err).Msg("loading objects")
 	}
 	defer objs.Close()
-
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-
-	time.Sleep(3 * time.Second)
 
 	// Set up network interfaces for the first time, then do it again on pod events
 	if err := setFiltersOnCiliumInterfaces(objs); err != nil {
