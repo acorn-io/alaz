@@ -7,11 +7,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ddosify/alaz/log"
-
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
+	"github.com/ddosify/alaz/log"
 )
 
 // match with values in tcp_state.c

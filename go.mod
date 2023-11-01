@@ -6,6 +6,7 @@ require (
 	github.com/cilium/ebpf v0.10.1-0.20230626090016-654491c8a500
 	github.com/prometheus/client_golang v1.16.0
 	github.com/rs/zerolog v1.29.1
+	github.com/vishvananda/netlink v1.2.1-beta.2.0.20230807190133-6afddb37c1f0
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a
 	k8s.io/api v0.27.2
 	k8s.io/apimachinery v0.27.2
@@ -13,7 +14,10 @@ require (
 
 )
 
-require github.com/prometheus/common v0.44.0 // indirect
+require (
+	github.com/prometheus/common v0.44.0 // indirect
+	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -53,7 +57,7 @@ require (
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
 	golang.org/x/net v0.12.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
-	golang.org/x/sys v0.10.0 // indirect
+	golang.org/x/sys v0.10.0
 	golang.org/x/term v0.10.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	golang.org/x/time v0.3.0 // indirect

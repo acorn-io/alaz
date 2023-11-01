@@ -18,6 +18,7 @@ import (
 	"github.com/ddosify/alaz/ebpf"
 	"github.com/ddosify/alaz/ebpf/l7_req"
 	"github.com/ddosify/alaz/ebpf/tcp_state"
+	"github.com/ddosify/alaz/ebpf/throughput"
 	"github.com/ddosify/alaz/log"
 
 	"github.com/ddosify/alaz/k8s"
@@ -183,6 +184,9 @@ func (a *Aggregator) processEbpf() {
 				WriteTimeNs:         d.WriteTimeNs,
 			}
 			go a.processL7(l7Event)
+		case throughput.THROUGHPUT_EVENT:
+			d := data.(throughput.ThroughputEvent) // copy data's value
+			go a.processThroughputEvent(d)
 		}
 	}
 }
@@ -511,6 +515,74 @@ func (a *Aggregator) processL7(d l7_req.L7Event) {
 			log.Logger.Error().Err(err).Msg("error persisting request")
 		}
 	}()
+}
+
+func (a *Aggregator) processThroughputEvent(e throughput.ThroughputEvent) {
+	// filter out localhost connections
+	if e.SAddr == "127.0.0.1" || e.DAddr == "127.0.0.1" {
+		return
+	}
+
+	pkt := datastore.Packet{
+		Time:     e.Timestamp,
+		Size:     e.Size,
+		FromIP:   e.SAddr,
+		FromPort: e.SPort,
+		ToIP:     e.DAddr,
+		ToPort:   e.DPort,
+	}
+
+	// determine source information
+	a.clusterInfo.mu.RLock()
+	fromPodUid, ok := a.clusterInfo.PodIPToPodUid[e.SAddr]
+	a.clusterInfo.mu.RUnlock()
+	if ok {
+		pkt.FromType = datastore.PodSource
+		pkt.FromUID = string(fromPodUid)
+	} else {
+		pkt.FromType = datastore.OutsideSource
+		remoteDnsHost, err := getHostnameFromIP(e.SAddr)
+		if err == nil {
+			pkt.FromUID = remoteDnsHost
+		}
+	}
+
+	// determine dest information
+	a.clusterInfo.mu.RLock()
+	toPodUid, ok := a.clusterInfo.PodIPToPodUid[e.DAddr]
+	a.clusterInfo.mu.RUnlock()
+	if ok {
+		pkt.ToType = datastore.PodDest
+		pkt.ToUID = string(toPodUid)
+	} else {
+		a.clusterInfo.mu.RLock()
+		toSvcUid, ok := a.clusterInfo.ServiceIPToServiceUid[e.DAddr]
+		a.clusterInfo.mu.RUnlock()
+		if ok {
+			pkt.ToType = datastore.ServiceDest
+			pkt.ToUID = string(toSvcUid)
+		} else {
+			pkt.ToType = datastore.OutsideDest
+			remoteDnsHost, err := getHostnameFromIP(e.DAddr)
+			if err == nil {
+				pkt.ToUID = remoteDnsHost
+			}
+		}
+	}
+
+	// determine direction
+	if pkt.FromType == datastore.PodSource && pkt.ToType == datastore.PodDest || pkt.ToType == datastore.ServiceDest {
+		pkt.Direction = datastore.Internal
+	} else if pkt.FromType == datastore.PodSource && pkt.ToType == datastore.OutsideDest {
+		pkt.Direction = datastore.Egress
+	} else {
+		pkt.Direction = datastore.Ingress
+	}
+
+	err := a.ds.PersistPacket(pkt)
+	if err != nil {
+		log.Logger.Error().Err(err).Msg("error persisting packet info")
+	}
 }
 
 // reverse dns lookup

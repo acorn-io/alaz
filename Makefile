@@ -10,7 +10,13 @@ CFLAGS := -O2 -g -Wall -Werror $(CFLAGS)
 # Obtain an absolute path to the directory of the Makefile.
 # Assume the Makefile is in the root of the repository.
 REPODIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
-UIDGID := $(shell stat -c '%u:%g' ${REPODIR})
+UNAME := $(shell uname -s)
+ifeq ($(UNAME),Darwin)
+	UIDGID := $(shell stat -f '%u:%g' ${REPODIR})
+else
+	UIDGID := $(shell stat -c '%u:%g' ${REPODIR})
+endif
+export UIDGID
 
 # Prefer podman if installed, otherwise use docker.
 # Note: Setting the var at runtime will always override.
@@ -27,7 +33,7 @@ TARGETS := \
 
 .PHONY: go_builder_image_build
 go_builder_image_build:
-	docker build -t ${IMAGE_GENERATE}:${VERSION_GENERATE} -f ${GENERATE_DOCKERFILE} .
+	docker build -t ${IMAGE_GENERATE}:${VERSION_GENERATE} --platform linux/amd64 -f ${GENERATE_DOCKERFILE} .
 
 
 .PHONY: all clean go_generate container-shell generate
@@ -40,6 +46,7 @@ go_generate:
 		-v "${REPODIR}":/ebpf -w /ebpf --env MAKEFLAGS \
 		--env CFLAGS="-fdebug-prefix-map=/ebpf=." \
 		--env HOME="/tmp" \
+		--platform linux/amd64 \
 		"${IMAGE_GENERATE}:${VERSION_GENERATE}" \
 		make all
 

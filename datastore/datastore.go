@@ -10,4 +10,5 @@ type DataStore interface {
 	PersistDaemonSet(ds DaemonSet, eventType string) error
 
 	PersistRequest(request Request) error
+	PersistPacket(pkt Packet) error
 }

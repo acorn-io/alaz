@@ -76,6 +76,7 @@ func getOnUpdatePodFunc(ch chan interface{}) func(interface{}, interface{}) {
 			EventType:    UPDATE,
 			Object:       newObj,
 		}
+
 		for _, container := range containers {
 			ch <- K8sResourceMessage{
 				ResourceType: CONTAINER,

@@ -114,3 +114,42 @@ type BackendResponse struct {
 		Error    string      `json:"error"`
 	} `json:"errors"`
 }
+
+// The following types are used for throughput metrics
+
+type Direction string
+
+const (
+	Ingress  Direction = "ingress"
+	Egress   Direction = "egress"
+	Internal Direction = "internal"
+)
+
+type Source string
+
+const (
+	PodSource     Source = "pod"
+	OutsideSource Source = "outside"
+)
+
+type Dest string
+
+const (
+	PodDest     Dest = "pod"
+	ServiceDest Dest = "service"
+	OutsideDest Dest = "outside"
+)
+
+type Packet struct {
+	Time      uint64
+	Size      uint32
+	Direction Direction
+	FromIP    string
+	FromType  Source
+	FromUID   string
+	FromPort  uint16
+	ToIP      string
+	ToType    Dest
+	ToUID     string
+	ToPort    uint16
+}
