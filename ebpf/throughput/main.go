@@ -149,7 +149,11 @@ func setFiltersOnCiliumInterfaces(objs bpfObjects) error {
 			if err := setUpEgressFilter(link, objs); err != nil {
 				errs = append(errs, fmt.Errorf("failed to set up egress filter for link %s: %w", link.Attrs().Name, err))
 			}
-			if err := setUpIngressQdiscAndFilter(link, objs); err != nil {
+
+			// We were previously using an ingress filter in addition to the egress filter, but it wasn't actually doing anything.
+			// For now, we will just delete those until we can figure out how to make them work.
+			// Egress on its own is enough to track throughput between all pods in the cluster.
+			if err := deleteIngressFilters(link); err != nil {
 				errs = append(errs, fmt.Errorf("failed to set up ingress filter for link %s: %w", link.Attrs().Name, err))
 			}
 		}
@@ -159,6 +163,22 @@ func setFiltersOnCiliumInterfaces(objs bpfObjects) error {
 }
 
 func setUpEgressFilter(link netlink.Link, objs bpfObjects) error {
+	existingFilters, err := netlink.FilterList(link, netlink.HANDLE_MIN_EGRESS)
+	if err != nil {
+		return err
+	}
+
+	for _, filter := range existingFilters {
+		if filter.Type() == "bpf" {
+			bpfFilter := filter.(*netlink.BpfFilter)
+			if bpfFilter.Name == "throughput_bpf_egress" {
+				if err := netlink.FilterDel(bpfFilter); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	filter := &netlink.BpfFilter{
 		FilterAttrs: netlink.FilterAttrs{
 			LinkIndex: link.Attrs().Index,
@@ -172,29 +192,22 @@ func setUpEgressFilter(link netlink.Link, objs bpfObjects) error {
 	return netlink.FilterReplace(filter)
 }
 
-func setUpIngressQdiscAndFilter(link netlink.Link, objs bpfObjects) error {
-	qdiscAttrs := netlink.QdiscAttrs{
-		LinkIndex: link.Attrs().Index,
-		Handle:    netlink.MakeHandle(0xffff, 0),
-		Parent:    netlink.HANDLE_CLSACT,
-	}
-	qdisc := netlink.GenericQdisc{
-		QdiscAttrs: qdiscAttrs,
-		QdiscType:  "clsact",
-	}
-	if err := netlink.QdiscReplace(&qdisc); err != nil {
+func deleteIngressFilters(link netlink.Link) error {
+	existingFilters, err := netlink.FilterList(link, netlink.HANDLE_MIN_INGRESS)
+	if err != nil {
 		return err
 	}
 
-	ingressFilter := &netlink.BpfFilter{
-		FilterAttrs: netlink.FilterAttrs{
-			LinkIndex: link.Attrs().Index,
-			Parent:    netlink.HANDLE_MIN_INGRESS,
-			Protocol:  unix.ETH_P_ALL,
-		},
-		Fd:           objs.bpfPrograms.PacketClassifier.FD(),
-		Name:         "throughput_bpf_ingress",
-		DirectAction: true,
+	for _, filter := range existingFilters {
+		if filter.Type() == "bpf" {
+			bpfFilter := filter.(*netlink.BpfFilter)
+			if bpfFilter.Name == "throughput_bpf_ingress" {
+				if err := netlink.FilterDel(bpfFilter); err != nil {
+					return err
+				}
+			}
+		}
 	}
-	return netlink.FilterReplace(ingressFilter)
+
+	return nil
 }
