@@ -144,20 +144,22 @@ func (p *PrometheusExporter) handleReq(req Request) {
 }
 
 func (p *PrometheusExporter) updateMetricsForReq(toPod PodEvent, req Request) {
-	p.latencyHistogram.With(prometheus.Labels{
-		"toPod":               toPod.Name,
-		"toAcornApp":          toPod.Labels[appLabel],
-		"toAcornAppNamespace": toPod.Labels[appNamespaceLabel],
-		"toAcornContainer":    toPod.Labels[containerLabel],
-	}).Observe(float64(req.Latency) / float64(1000000)) // divide by 1 million to convert nanoseconds to milliseconds
+	// TODO - uncomment this when it is actually useful
 
-	p.statusCounter.With(prometheus.Labels{
-		"toPod":               toPod.Name,
-		"status":              strconv.Itoa(int(req.StatusCode)),
-		"toAcornApp":          toPod.Labels[appLabel],
-		"toAcornAppNamespace": toPod.Labels[appNamespaceLabel],
-		"toAcornContainer":    toPod.Labels[containerLabel],
-	}).Inc()
+	//p.latencyHistogram.With(prometheus.Labels{
+	//	"toPod":               toPod.Name,
+	//	"toAcornApp":          toPod.Labels[appLabel],
+	//	"toAcornAppNamespace": toPod.Labels[appNamespaceLabel],
+	//	"toAcornContainer":    toPod.Labels[containerLabel],
+	//}).Observe(float64(req.Latency) / float64(1000000)) // divide by 1 million to convert nanoseconds to milliseconds
+	//
+	//p.statusCounter.With(prometheus.Labels{
+	//	"toPod":               toPod.Name,
+	//	"status":              strconv.Itoa(int(req.StatusCode)),
+	//	"toAcornApp":          toPod.Labels[appLabel],
+	//	"toAcornAppNamespace": toPod.Labels[appNamespaceLabel],
+	//	"toAcornContainer":    toPod.Labels[containerLabel],
+	//}).Inc()
 }
 
 func (p *PrometheusExporter) handlePackets() {
@@ -176,51 +178,29 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 		"toPort": strconv.Itoa(int(pkt.ToPort)),
 	}
 
-	if pkt.FromType == PodSource {
+	// We only want to keep metrics between pods in the same project (app namespace)
+	if pkt.FromType == PodSource && pkt.ToType == PodDest {
 		fromPod, found := p.podCache.get(pkt.FromUID)
-		if found {
+		toPod, found2 := p.podCache.get(pkt.ToUID)
+
+		// Make sure that both pods exist in the cache, have a project label set, and have the same project and app names
+		if found && found2 && fromPod.(PodEvent).Labels[appNamespaceLabel] != "" && toPod.(PodEvent).Labels[appNamespaceLabel] != "" &&
+			fromPod.(PodEvent).Labels[appNamespaceLabel] == toPod.(PodEvent).Labels[appNamespaceLabel] &&
+			fromPod.(PodEvent).Labels[appLabel] == toPod.(PodEvent).Labels[appLabel] {
+
 			labels["fromPod"] = fromPod.(PodEvent).Name
 			labels["fromAcornApp"] = fromPod.(PodEvent).Labels[appLabel]
 			labels["fromAcornAppNamespace"] = fromPod.(PodEvent).Labels[appNamespaceLabel]
 			labels["fromAcornContainer"] = fromPod.(PodEvent).Labels[containerLabel]
 
-			if pkt.ToType == PodDest {
-				toPod, found := p.podCache.get(pkt.ToUID)
-				if found {
-					labels["toPod"] = toPod.(PodEvent).Name
-					labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
-					labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
-					labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
-				}
-			} else if pkt.ToType == OutsideDest {
-				labels["toHostname"] = pkt.ToUID
-			} else if pkt.ToType == ServiceDest {
-				log.Logger.Warn().Msgf("Pod %s in namespace %s sent traffic to service with uid %s)", fromPod.(PodEvent).Name, fromPod.(PodEvent).Namespace, pkt.ToUID)
-				labels["toPod"] = pkt.ToIP
-			} else {
-				labels["toPod"] = pkt.ToIP
-			}
-		}
-	} else if pkt.FromType == OutsideSource {
-		labels["fromHostname"] = pkt.FromUID
+			labels["toPod"] = toPod.(PodEvent).Name
+			labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
+			labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
+			labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
 
-		if pkt.ToType == PodDest {
-			toPod, found := p.podCache.get(pkt.ToUID)
-			if found {
-				labels["toPod"] = toPod.(PodEvent).Name
-				labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
-				labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
-				labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
-			}
-		} else if pkt.ToType == ServiceDest {
-			log.Logger.Warn().Msgf("Host %s (outside) sent traffic to service with uid %s)", pkt.FromUID, pkt.ToUID)
-			labels["toPod"] = pkt.ToIP
-		} else {
-			labels["toPod"] = pkt.ToIP
+			p.throughputCounter.With(setEmptyPrometheusLabels(labels, throughputCounterLabels)).Add(float64(pkt.Size))
 		}
 	}
-
-	p.throughputCounter.With(setEmptyPrometheusLabels(labels, throughputCounterLabels)).Add(float64(pkt.Size))
 }
 
 func setEmptyPrometheusLabels(labels prometheus.Labels, labelList []string) prometheus.Labels {
