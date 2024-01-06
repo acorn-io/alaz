@@ -126,16 +126,8 @@ func (a *Aggregator) processk8s() {
 			a.processPod(d)
 		case k8s.SERVICE:
 			a.processSvc(d)
-		case k8s.REPLICASET:
-			a.processReplicaSet(d)
-		case k8s.DEPLOYMENT:
-			a.processDeployment(d)
-		case k8s.ENDPOINTS:
-			a.processEndpoints(d)
 		case k8s.CONTAINER:
 			a.processContainer(d)
-		case k8s.DAEMONSET:
-			a.processDaemonSet(d)
 		default:
 			log.Logger.Warn().Msgf("unknown resource type %s", d.ResourceType)
 		}

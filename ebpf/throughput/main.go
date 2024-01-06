@@ -90,16 +90,14 @@ func DeployAndWait(ctx context.Context, ch chan interface{}, eventChan <-chan in
 
 			bpfEvent := (*ThroughputEventBpf)(unsafe.Pointer(&record.RawSample[0]))
 
-			go func() {
-				ch <- ThroughputEvent{
-					Timestamp: bpfEvent.Timestamp,
-					Size:      bpfEvent.Size,
-					SPort:     bpfEvent.SPort,
-					DPort:     bpfEvent.DPort,
-					SAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.SAddr[0], bpfEvent.SAddr[1], bpfEvent.SAddr[2], bpfEvent.SAddr[3]),
-					DAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.DAddr[0], bpfEvent.DAddr[1], bpfEvent.DAddr[2], bpfEvent.DAddr[3]),
-				}
-			}()
+			ch <- ThroughputEvent{
+				Timestamp: bpfEvent.Timestamp,
+				Size:      bpfEvent.Size,
+				SPort:     bpfEvent.SPort,
+				DPort:     bpfEvent.DPort,
+				SAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.SAddr[0], bpfEvent.SAddr[1], bpfEvent.SAddr[2], bpfEvent.SAddr[3]),
+				DAddr:     fmt.Sprintf("%d.%d.%d.%d", bpfEvent.DAddr[0], bpfEvent.DAddr[1], bpfEvent.DAddr[2], bpfEvent.DAddr[3]),
+			}
 		}
 
 		for {
