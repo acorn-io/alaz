@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
-	appsv1 "k8s.io/client-go/informers/apps/v1"
 	v1 "k8s.io/client-go/informers/core/v1"
 
 	"k8s.io/client-go/kubernetes"
@@ -26,13 +25,9 @@ import (
 type K8SResourceType string
 
 const (
-	SERVICE    = "Service"
-	POD        = "Pod"
-	REPLICASET = "ReplicaSet"
-	DEPLOYMENT = "Deployment"
-	ENDPOINTS  = "Endpoints"
-	CONTAINER  = "Container"
-	DAEMONSET  = "DaemonSet"
+	SERVICE   = "Service"
+	POD       = "Pod"
+	CONTAINER = "Container"
 )
 
 const (
@@ -48,12 +43,8 @@ type K8sCollector struct {
 	stopper          chan struct{} // stop signal for the informers
 	doneChan         chan struct{} // done signal for k8sCollector
 	// watchers
-	podInformer        v1.PodInformer
-	serviceInformer    v1.ServiceInformer
-	replicasetInformer appsv1.ReplicaSetInformer
-	deploymentInformer appsv1.DeploymentInformer
-	endpointsInformer  v1.EndpointsInformer
-	daemonsetInformer  appsv1.DaemonSetInformer
+	podInformer     v1.PodInformer
+	serviceInformer v1.ServiceInformer
 
 	Events chan interface{}
 }
@@ -69,22 +60,6 @@ func (k *K8sCollector) Init(events chan interface{}) error {
 	// Service
 	k.serviceInformer = k.informersFactory.Core().V1().Services()
 	k.watchers[SERVICE] = k.informersFactory.Core().V1().Services().Informer()
-
-	// ReplicaSet
-	k.replicasetInformer = k.informersFactory.Apps().V1().ReplicaSets()
-	k.watchers[REPLICASET] = k.replicasetInformer.Informer()
-
-	// Deployment
-	k.deploymentInformer = k.informersFactory.Apps().V1().Deployments()
-	k.watchers[DEPLOYMENT] = k.deploymentInformer.Informer()
-
-	// Endpoints
-	k.endpointsInformer = k.informersFactory.Core().V1().Endpoints()
-	k.watchers[ENDPOINTS] = k.endpointsInformer.Informer()
-
-	// DaemonSet
-	k.daemonsetInformer = k.informersFactory.Apps().V1().DaemonSets()
-	k.watchers[DAEMONSET] = k.daemonsetInformer.Informer()
 
 	defer runtime.HandleCrash()
 
@@ -105,30 +80,6 @@ func (k *K8sCollector) Init(events chan interface{}) error {
 		AddFunc:    getOnAddServiceFunc(k.Events),
 		UpdateFunc: getOnUpdateServiceFunc(k.Events),
 		DeleteFunc: getOnDeleteServiceFunc(k.Events),
-	})
-
-	k.watchers[REPLICASET].AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    getOnAddReplicaSetFunc(k.Events),
-		UpdateFunc: getOnUpdateReplicaSetFunc(k.Events),
-		DeleteFunc: getOnDeleteReplicaSetFunc(k.Events),
-	})
-
-	k.watchers[DEPLOYMENT].AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    getOnAddDeploymentSetFunc(k.Events),
-		UpdateFunc: getOnUpdateDeploymentSetFunc(k.Events),
-		DeleteFunc: getOnDeleteDeploymentSetFunc(k.Events),
-	})
-
-	k.watchers[ENDPOINTS].AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    getOnAddEndpointsSetFunc(k.Events),
-		UpdateFunc: getOnUpdateEndpointsSetFunc(k.Events),
-		DeleteFunc: getOnDeleteEndpointsSetFunc(k.Events),
-	})
-
-	k.watchers[DAEMONSET].AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    getOnAddDaemonSetFunc(k.Events),
-		UpdateFunc: getOnUpdateDaemonSetFunc(k.Events),
-		DeleteFunc: getOnDeleteDaemonSetFunc(k.Events),
 	})
 
 	wg := sync.WaitGroup{}
