@@ -34,7 +34,7 @@ func NewServer(ctx context.Context, reg *prometheus.Registry, podIPCache *eventC
 }
 
 func (s *Server) Serve() {
-	http.Handle("/metricz", s.authorizePrometheus(promhttp.HandlerFor(s.reg, promhttp.HandlerOpts{})))
+	http.Handle("/metricz", s.authorize(promhttp.HandlerFor(s.reg, promhttp.HandlerOpts{})))
 	go func() {
 		if err := http.ListenAndServe(":8080", nil); err != nil {
 			log.Logger.Error().Err(err).Msg("error while serving metrics")
@@ -44,7 +44,10 @@ func (s *Server) Serve() {
 	log.Logger.Info().Msg("Prometheus HTTP server stopped")
 }
 
-func (s *Server) authorizePrometheus(handler http.Handler) http.Handler {
+func (s *Server) authorize(handler http.Handler) http.Handler {
+	// Only two things are authorized to scrape Alaz:
+	// - Prometheus
+	// - cluster-agent
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var sourceIP string
 		parts := strings.Split(r.RemoteAddr, ":")
@@ -58,7 +61,7 @@ func (s *Server) authorizePrometheus(handler http.Handler) http.Handler {
 		}
 
 		pod, ok := s.podIPCache.get(sourceIP)
-		if ok && pod.(PodEvent).Namespace == s.prometheusNamespace {
+		if ok && (isPrometheus(pod.(PodEvent)) || isClusterAgent(pod.(PodEvent))) {
 			handler.ServeHTTP(w, r)
 			return
 		}
@@ -67,4 +70,14 @@ func (s *Server) authorizePrometheus(handler http.Handler) http.Handler {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		w.Write([]byte("401 Unauthorized\n"))
 	})
+}
+
+func isPrometheus(p PodEvent) bool {
+	return p.Namespace == "prometheus-operator"
+}
+
+func isClusterAgent(p PodEvent) bool {
+	return p.Labels[appLabel] == "cluster-agent" &&
+		p.Labels[appNamespaceLabel] == "acorn" &&
+		p.Labels[containerLabel] == "cluster-agent"
 }

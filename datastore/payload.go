@@ -25,15 +25,16 @@ type Event interface {
 }
 
 type PodEvent struct {
-	UID       string            `json:"uid"`
-	EventType string            `json:"event_type"`
-	Name      string            `json:"name"`
-	Namespace string            `json:"namespace"`
-	IP        string            `json:"ip"`
-	OwnerType string            `json:"owner_type"`
-	OwnerName string            `json:"owner_name"`
-	OwnerID   string            `json:"owner_id"`
-	Labels    map[string]string `json:"labels"`
+	UID         string            `json:"uid"`
+	EventType   string            `json:"event_type"`
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	IP          string            `json:"ip"`
+	OwnerType   string            `json:"owner_type"`
+	OwnerName   string            `json:"owner_name"`
+	OwnerID     string            `json:"owner_id"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
 }
 
 func (p PodEvent) GetUID() string { return p.UID }
@@ -136,15 +137,16 @@ type RequestsPayload struct {
 
 func convertPodToPodEvent(pod Pod, eventType string) PodEvent {
 	return PodEvent{
-		UID:       pod.UID,
-		EventType: eventType,
-		Name:      pod.Name,
-		Namespace: pod.Namespace,
-		IP:        pod.IP,
-		OwnerType: pod.OwnerType,
-		OwnerName: pod.OwnerName,
-		OwnerID:   pod.OwnerID,
-		Labels:    pod.Labels,
+		UID:         pod.UID,
+		EventType:   eventType,
+		Name:        pod.Name,
+		Namespace:   pod.Namespace,
+		IP:          pod.IP,
+		OwnerType:   pod.OwnerType,
+		OwnerName:   pod.OwnerName,
+		OwnerID:     pod.OwnerID,
+		Labels:      pod.Labels,
+		Annotations: pod.Annotations,
 	}
 }
 
