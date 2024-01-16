@@ -57,7 +57,8 @@ func main() {
 	var ec *ebpf.EbpfCollector
 	if ebpfEnabled {
 		ec = ebpf.NewEbpfCollector(ctx)
-		go ec.Deploy()
+		// TODO(g-linville): uncomment this when we want to process L7
+		//go ec.Deploy()
 		go ec.DeployThroughput(throughputKubeEvents)
 
 		a := aggregator.NewAggregator(aggregatorKubeEvents, nil, ec.EbpfEvents(), exporter)
