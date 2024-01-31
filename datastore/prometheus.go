@@ -191,8 +191,8 @@ func (p *PrometheusExporter) handlePackets() {
 }
 
 func (p *PrometheusExporter) handlePacket(pkt Packet) {
-
-	// We only want to keep metrics between pods in the same project (app namespace)
+	// Check for packets between pods in the same project.
+	// (Reminder: !pkt.IsIngress means that the packet was detected by the egress eBPF filter.)
 	if !pkt.IsIngress && pkt.FromType == PodSource && pkt.ToType == PodDest {
 		fromPod, found := p.podCache.get(pkt.FromUID)
 		toPod, found2 := p.podCache.get(pkt.ToUID)
@@ -216,7 +216,13 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 
 			p.throughputCounter.With(setEmptyPrometheusLabels(labels, throughputCounterLabels)).Add(float64(pkt.Size))
 		}
-	} else if pkt.IsIngress && pkt.FromType == PodSource && pkt.ToType == OutsideDest && !strings.HasPrefix(pkt.ToIP, "10.") {
+	}
+
+	// Check for packets from pods to outside the cluster.
+	// (Reminder: pkt.IsIngress just means that the packet was detected by the ingress eBPF filter, which is actually detecting egress traffic.)
+	// OutsideDest indicates that the destination IP address is not a known pod or service IP address.
+	// We also filter out the 10. prefix because that is the internal IP address range used by the cluster.
+	if pkt.IsIngress && pkt.FromType == PodSource && pkt.ToType == OutsideDest && !strings.HasPrefix(pkt.ToIP, "10.") {
 		fromPod, found := p.podCache.get(pkt.FromUID)
 
 		if found && fromPod.(PodEvent).Labels[accountIDLabel] != "" {
