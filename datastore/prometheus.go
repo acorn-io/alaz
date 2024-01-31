@@ -237,7 +237,9 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 			if resolvedOfferingsJson, ok := fromPod.(PodEvent).Annotations[resolvedOfferingsAnnotation]; ok {
 				offerings := map[string]any{}
 				if err := json.Unmarshal([]byte(resolvedOfferingsJson), &offerings); err == nil {
-					labels["fromAcornComputeClass"] = offerings["class"].(string)
+					if class, ok := offerings["class"]; ok {
+						labels["fromAcornComputeClass"] = class.(string)
+					}
 				} else {
 					log.Logger.Error().Msg(err.Error())
 				}
