@@ -1,15 +1,16 @@
 package datastore
 
 type Pod struct {
-	UID       string // Pod UID
-	Name      string // Pod Name
-	Namespace string // Namespace
-	Image     string // Main container image
-	IP        string // Pod IP
-	OwnerType string // ReplicaSet or nil
-	OwnerID   string // ReplicaSet UID
-	OwnerName string // ReplicaSet Name
-	Labels    map[string]string
+	UID         string // Pod UID
+	Name        string // Pod Name
+	Namespace   string // Namespace
+	Image       string // Main container image
+	IP          string // Pod IP
+	OwnerType   string // ReplicaSet or nil
+	OwnerID     string // ReplicaSet UID
+	OwnerName   string // ReplicaSet Name
+	Labels      map[string]string
+	Annotations map[string]string
 }
 
 type Service struct {
@@ -152,4 +153,8 @@ type Packet struct {
 	ToType    Dest
 	ToUID     string
 	ToPort    uint16
+	// IsIngress indicates whether the packet was detected on the ingress or egress bpf filter.
+	// The egress bpf filter is used for the throughput metric, while the ingress bpf filter
+	// is used for the egress metric. (Seems backwards, but that is how it actually works.)
+	IsIngress bool
 }

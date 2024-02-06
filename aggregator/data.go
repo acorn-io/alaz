@@ -516,12 +516,13 @@ func (a *Aggregator) processThroughputEvent(e throughput.ThroughputEvent) {
 	}
 
 	pkt := datastore.Packet{
-		Time:     e.Timestamp,
-		Size:     e.Size,
-		FromIP:   e.SAddr,
-		FromPort: e.SPort,
-		ToIP:     e.DAddr,
-		ToPort:   e.DPort,
+		Time:      e.Timestamp,
+		Size:      e.Size,
+		FromIP:    e.SAddr,
+		FromPort:  e.SPort,
+		ToIP:      e.DAddr,
+		ToPort:    e.DPort,
+		IsIngress: e.IsIngress,
 	}
 
 	// determine source information

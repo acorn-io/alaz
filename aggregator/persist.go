@@ -45,7 +45,8 @@ func (a *Aggregator) processPod(d k8s.K8sResourceMessage) {
 		OwnerID:   ownerID,
 		OwnerName: ownerName,
 
-		Labels: pod.GetLabels(),
+		Labels:      pod.GetLabels(),
+		Annotations: pod.GetAnnotations(),
 	}
 
 	switch d.EventType {

@@ -23,6 +23,7 @@ struct throughput_event
 	__u16 dport;
 	__u8  saddr[16];
 	__u8  daddr[16];
+	__u8  is_ingress;
 };
 
 // used for sending throughput events to userspace
@@ -35,6 +36,11 @@ SEC("classifier")
 int packet_classifier(struct __sk_buff *skb) {
 	void *data = (void*)(long)skb->data;
 	void *data_end = (void*)(long)skb->data_end;
+
+	__u8 is_ingress = 0;
+	if (skb->ifindex == skb->ingress_ifindex) {
+		is_ingress = 1;
+	}
 
 	if (data + sizeof(struct ethhdr) > data_end) {
     	return TC_ACT_UNSPEC;
@@ -58,6 +64,7 @@ int packet_classifier(struct __sk_buff *skb) {
 		e->size = skb->len;
 		e->sport = 0;
 		e->dport = 0;
+		e->is_ingress = is_ingress;
 		__builtin_memcpy(&e->saddr, &ip->saddr, sizeof(ip->saddr));
 		__builtin_memcpy(&e->daddr, &ip->daddr, sizeof(ip->daddr));
 
@@ -84,5 +91,5 @@ int packet_classifier(struct __sk_buff *skb) {
 		bpf_ringbuf_submit(e, 0);
 	}
 
-	return TC_ACT_OK;
+	return TC_ACT_UNSPEC;
 }

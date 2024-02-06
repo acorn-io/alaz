@@ -2,7 +2,9 @@ package datastore
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/ddosify/alaz/log"
@@ -10,15 +12,20 @@ import (
 )
 
 const (
+	accountIDLabel    = "acorn.io/account-id"
 	appLabel          = "acorn.io/app-public-name"
 	appNamespaceLabel = "acorn.io/app-namespace"
 	containerLabel    = "acorn.io/container-name"
+	projectLabel      = "acorn.io/project-name"
+
+	resolvedOfferingsAnnotation = "acorn.io/container-resolved-offerings"
 )
 
 var (
 	latencyHistLabels       = []string{"toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace"}
 	statusCounterLabels     = []string{"toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "status"}
 	throughputCounterLabels = []string{"fromPod", "fromAcornApp", "fromAcornContainer", "fromAcornAppNamespace", "fromHostname", "toPod", "toAcornApp", "toAcornContainer", "toAcornAppNamespace", "toPort", "toHostname"}
+	egressCounterLabels     = []string{"fromPod", "fromAcornApp", "fromAcornContainer", "fromAcornProject", "fromAcornAccountID", "fromAcornComputeClass"}
 )
 
 type PrometheusExporter struct {
@@ -28,6 +35,7 @@ type PrometheusExporter struct {
 	latencyHistogram  *prometheus.HistogramVec
 	statusCounter     *prometheus.CounterVec
 	throughputCounter *prometheus.CounterVec
+	egressCounter     *prometheus.CounterVec
 
 	podCache   *eventCache
 	podIPCache *eventCache
@@ -111,6 +119,15 @@ func NewPrometheusExporter(ctx context.Context) *PrometheusExporter {
 	)
 	exporter.reg.MustRegister(exporter.throughputCounter)
 
+	exporter.egressCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "alaz",
+			Name:      "egress",
+		},
+		egressCounterLabels,
+	)
+	exporter.reg.MustRegister(exporter.egressCounter)
+
 	go exporter.handleReqs()
 	go exporter.handlePackets()
 
@@ -174,12 +191,9 @@ func (p *PrometheusExporter) handlePackets() {
 }
 
 func (p *PrometheusExporter) handlePacket(pkt Packet) {
-	labels := prometheus.Labels{
-		"toPort": strconv.Itoa(int(pkt.ToPort)),
-	}
-
-	// We only want to keep metrics between pods in the same project (app namespace)
-	if pkt.FromType == PodSource && pkt.ToType == PodDest {
+	// Check for packets between pods in the same project.
+	// (Reminder: !pkt.IsIngress means that the packet was detected by the egress eBPF filter.)
+	if !pkt.IsIngress && pkt.FromType == PodSource && pkt.ToType == PodDest {
 		fromPod, found := p.podCache.get(pkt.FromUID)
 		toPod, found2 := p.podCache.get(pkt.ToUID)
 
@@ -188,17 +202,50 @@ func (p *PrometheusExporter) handlePacket(pkt Packet) {
 			fromPod.(PodEvent).Labels[appNamespaceLabel] == toPod.(PodEvent).Labels[appNamespaceLabel] &&
 			fromPod.(PodEvent).Labels[appLabel] == toPod.(PodEvent).Labels[appLabel] {
 
-			labels["fromPod"] = fromPod.(PodEvent).Name
-			labels["fromAcornApp"] = fromPod.(PodEvent).Labels[appLabel]
-			labels["fromAcornAppNamespace"] = fromPod.(PodEvent).Labels[appNamespaceLabel]
-			labels["fromAcornContainer"] = fromPod.(PodEvent).Labels[containerLabel]
-
-			labels["toPod"] = toPod.(PodEvent).Name
-			labels["toAcornApp"] = toPod.(PodEvent).Labels[appLabel]
-			labels["toAcornAppNamespace"] = toPod.(PodEvent).Labels[appNamespaceLabel]
-			labels["toAcornContainer"] = toPod.(PodEvent).Labels[containerLabel]
+			labels := prometheus.Labels{
+				"toPort":                strconv.Itoa(int(pkt.ToPort)),
+				"fromPod":               fromPod.(PodEvent).Name,
+				"fromAcornApp":          fromPod.(PodEvent).Labels[appLabel],
+				"fromAcornAppNamespace": fromPod.(PodEvent).Labels[appNamespaceLabel],
+				"fromAcornContainer":    fromPod.(PodEvent).Labels[containerLabel],
+				"toPod":                 toPod.(PodEvent).Name,
+				"toAcornApp":            toPod.(PodEvent).Labels[appLabel],
+				"toAcornAppNamespace":   toPod.(PodEvent).Labels[appNamespaceLabel],
+				"toAcornContainer":      toPod.(PodEvent).Labels[containerLabel],
+			}
 
 			p.throughputCounter.With(setEmptyPrometheusLabels(labels, throughputCounterLabels)).Add(float64(pkt.Size))
+		}
+	}
+
+	// Check for packets from pods to outside the cluster.
+	// (Reminder: pkt.IsIngress just means that the packet was detected by the ingress eBPF filter, which is actually detecting egress traffic.)
+	// OutsideDest indicates that the destination IP address is not a known pod or service IP address.
+	// We also filter out the 10. prefix because that is the internal IP address range used by the cluster.
+	if pkt.IsIngress && pkt.FromType == PodSource && pkt.ToType == OutsideDest && !strings.HasPrefix(pkt.ToIP, "10.") {
+		fromPod, found := p.podCache.get(pkt.FromUID)
+
+		if found && fromPod.(PodEvent).Labels[accountIDLabel] != "" {
+			labels := prometheus.Labels{
+				"fromPod":            fromPod.(PodEvent).Name,
+				"fromAcornApp":       fromPod.(PodEvent).Labels[appLabel],
+				"fromAcornProject":   fromPod.(PodEvent).Labels[projectLabel],
+				"fromAcornContainer": fromPod.(PodEvent).Labels[containerLabel],
+				"fromAcornAccountID": fromPod.(PodEvent).Labels[accountIDLabel],
+			}
+
+			if resolvedOfferingsJson, ok := fromPod.(PodEvent).Annotations[resolvedOfferingsAnnotation]; ok {
+				offerings := map[string]any{}
+				if err := json.Unmarshal([]byte(resolvedOfferingsJson), &offerings); err == nil {
+					if class, ok := offerings["class"]; ok {
+						labels["fromAcornComputeClass"] = class.(string)
+					}
+				} else {
+					log.Logger.Error().Msg(err.Error())
+				}
+			}
+
+			p.egressCounter.With(setEmptyPrometheusLabels(labels, egressCounterLabels)).Add(float64(pkt.Size))
 		}
 	}
 }
